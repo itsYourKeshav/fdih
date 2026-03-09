@@ -1,0 +1,553 @@
+AULINTRI
+AI-Powered Logistics Intelligence Platform
+Architecture & Data Model
+Freight Document Intelligence Hub
+Document ID
+FDIH-ARCH-001 v1.0
+Version
+1.0
+Date
+March 2026
+Status
+Approved
+Pattern
+Single full-stack app — Next.js frontend + Express backend + PostgreSQL
+No auth
+Open access. No tokens, no sessions, no middleware to bypass.
+No abstraction layers
+No storage interface, no message queue, no monorepo. One backend, one frontend.
+Sections
+Tech Stack · Project Structure · Database Schema · Claude Contract · API Reference · Service Logic · Env Vars · Config Files · Implementation Rules
+§1 — Tech Stack
+Layer
+Choice
+Notes
+Frontend
+Next.js 14 App Router + TypeScript + Tailwind CSS v3
+File-based routing. All pages are "use client" components using React hooks for data fetching.
+Backend
+Node.js 20 LTS + Express 4
+REST API only. No GraphQL. No tRPC.
+Database
+PostgreSQL 15
+Relational schema. No ORM — raw parameterised SQL via pg.
+AI
+Anthropic Claude API
+Model: claude-sonnet-4-5-20250929. SDK: @anthropic-ai/sdk.
+Charts
+Recharts 2.x
+ResponsiveContainer on every chart. Installed in frontend only.
+Validation
+Zod 3.x
+Validates Claude JSON response before any DB write. Backend only.
+File uploads
+multer 1.x
+memStorage — file buffer in memory. Written to disk in route handler.
+DB driver
+pg 8.x (node-postgres)
+Pool of 10 connections. No ORM. Named params via positional $1 $2.
+HTTP client
+fetch (native)
+Frontend api.ts uses native fetch. No axios.
+§2 — Project Structure
+Two separate npm packages under one root folder. No npm workspaces. No shared types package. The frontend imports nothing from the backend.
+fdih/
+├── backend/
+│   ├── src/
+│   │   ├── db/
+│   │   │   ├── pool.ts                 # pg Pool singleton
+│   │   │   ├── migrate.ts              # migration runner script
+│   │   │   └── migrations/
+│   │   │       ├── 001_init.sql         # all tables + trigger
+│   │   │       └── 002_indexes.sql      # all indexes
+│   │   ├── routes/
+│   │   │   ├── documents.ts            # POST upload, GET status, GET :id, PUT review, GET list, GET file
+│   │   │   └── analytics.ts            # GET field-accuracy, GET trend, GET distribution
+│   │   ├── services/
+│   │   │   ├── extractionService.ts    # Claude call → Zod → DB write
+│   │   │   └── correctionService.ts    # save edits + correction_history rows
+│   │   ├── adapters/
+│   │   │   └── claudeClient.ts         # Anthropic SDK wrapper
+│   │   ├── middleware/
+│   │   │   └── errorHandler.ts         # global Express error handler
+│   │   ├── errors/
+│   │   │   └── AppError.ts             # NotFoundError, ValidationError, ExtractionError
+│   │   ├── types/
+│   │   │   └── index.ts                # Document, ExtractedField, CorrectionRow, etc.
+│   │   └── index.ts                    # Express app wiring + server start
+│   ├── package.json
+│   └── tsconfig.json
+│
+├── frontend/
+│   ├── app/
+│   │   ├── layout.tsx                  # root layout: sidebar + main
+│   │   ├── page.tsx                    # S1 Dashboard  (/)
+│   │   ├── upload/
+│   │   │   └── page.tsx                # S2 Upload      (/upload)
+│   │   ├── review/
+│   │   │   └── [id]/
+│   │   │       └── page.tsx            # S3 Review      (/review/:id)
+│   │   ├── documents/
+│   │   │   └── [id]/
+│   │   │       └── page.tsx            # S4 Detail      (/documents/:id)
+│   │   └── analytics/
+│   │       └── page.tsx                # S5 Analytics   (/analytics)
+│   ├── components/
+│   │   ├── ui/
+│   │   │   ├── ConfBadge.tsx
+│   │   │   ├── TypeBadge.tsx
+│   │   │   ├── StatusBadge.tsx
+│   │   │   ├── Btn.tsx
+│   │   │   ├── Card.tsx
+│   │   │   └── EmptyState.tsx
+│   │   ├── layout/
+│   │   │   ├── Sidebar.tsx
+│   │   │   ├── PageHeader.tsx
+│   │   │   └── MobileDrawer.tsx
+│   │   └── features/
+│   │       ├── StatCards.tsx
+│   │       ├── FilterBar.tsx
+│   │       ├── DocumentTable.tsx
+│   │       ├── FieldForm.tsx
+│   │       ├── FilePreview.tsx
+│   │       ├── CorrectionHistory.tsx
+│   │       └── charts/
+│   │           ├── FieldAccuracyChart.tsx
+│   │           ├── TrendChart.tsx
+│   │           └── DistributionChart.tsx
+│   ├── lib/
+│   │   ├── api.ts                      # typed fetch wrappers — all 9 endpoints
+│   │   └── utils.ts                    # formatDate, cn(), truncate()
+│   ├── package.json
+│   └── tsconfig.json
+│
+├── .env.example
+├── docker-compose.yml
+└── package.json                        # root: "dev" script runs both with concurrently
+§3 — Database Schema
+001_init.sql — Complete
+-- Migration tracking
+CREATE TABLE IF NOT EXISTS migrations_applied (
+  name        TEXT PRIMARY KEY,
+  applied_at  TIMESTAMPTZ DEFAULT now()
+);
+-- Demo organisation (one row, seeded by migrate.ts)
+CREATE TABLE organisations (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name        TEXT NOT NULL,
+  created_at  TIMESTAMPTZ DEFAULT now()
+);
+-- Documents
+CREATE TABLE documents (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id              UUID NOT NULL REFERENCES organisations(id),
+  document_type       TEXT NOT NULL
+    CHECK (document_type IN ('commercial_invoice','packing_list','bill_of_lading')),
+  status              TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending','processing','review','approved','failed')),
+  file_path           TEXT NOT NULL,      -- relative: {doc_id}/{filename}
+  original_filename   TEXT NOT NULL,
+  overall_confidence  NUMERIC(5,2),       -- mean of 14 field scores
+  uploaded_at         TIMESTAMPTZ DEFAULT now(),
+  updated_at          TIMESTAMPTZ DEFAULT now()
+);
+-- Extracted fields — relational, one row per field
+CREATE TABLE extracted_fields (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  document_id    UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  org_id         UUID NOT NULL,
+  field_name     TEXT NOT NULL,
+  ai_value       TEXT,          -- Claude output; arrays as JSON string
+  final_value    TEXT,          -- after user review
+  confidence     INTEGER NOT NULL CHECK (confidence BETWEEN 0 AND 100),
+  was_corrected  BOOLEAN DEFAULT false,
+  created_at     TIMESTAMPTZ DEFAULT now()
+);
+-- Correction history — append-only audit trail
+CREATE TABLE correction_history (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  document_id      UUID NOT NULL REFERENCES documents(id),
+  org_id           UUID NOT NULL,
+  field_name       TEXT NOT NULL,
+  ai_value         TEXT,                  -- snapshot at extraction time
+  corrected_value  TEXT NOT NULL,
+  corrected_at     TIMESTAMPTZ DEFAULT now()
+);
+-- Trigger: make correction_history truly append-only
+CREATE OR REPLACE FUNCTION prevent_correction_modification()
+RETURNS TRIGGER AS $$
+BEGIN
+  RAISE EXCEPTION 'correction_history is append-only';
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER correction_immutable
+  BEFORE UPDATE OR DELETE ON correction_history
+  FOR EACH ROW EXECUTE FUNCTION prevent_correction_modification();
+002_indexes.sql
+CREATE INDEX idx_documents_org      ON documents(org_id);
+CREATE INDEX idx_documents_status   ON documents(status);
+CREATE INDEX idx_documents_type     ON documents(document_type);
+CREATE INDEX idx_documents_uploaded ON documents(uploaded_at DESC);
+CREATE INDEX idx_fields_document    ON extracted_fields(document_id);
+CREATE INDEX idx_fields_field_name  ON extracted_fields(field_name);
+-- composite index for search queries
+CREATE INDEX idx_fields_search      ON extracted_fields(document_id, field_name, final_value);
+CREATE INDEX idx_history_document   ON correction_history(document_id);
+The 14 Field Names (canonical — used in field_name column)
+field_name
+value type
+Storage note
+shipper_name
+string | null
+Plain text
+shipper_address
+string | null
+Plain text, may be multiline
+consignee_name
+string | null
+Plain text
+consignee_address
+string | null
+Plain text, may be multiline
+commodity_description
+string | null
+Plain text
+quantity_and_units
+string | null
+e.g. "500 cartons"
+gross_weight
+string | null
+e.g. "1200 kg"
+net_weight
+string | null
+e.g. "1050 kg"
+country_of_origin
+string | null
+Used in filter dropdown
+declared_value
+string | null
+Numeric string, no currency symbol
+currency
+string | null
+ISO 4217 code e.g. "USD"
+incoterms
+string | null
+e.g. "FOB Shanghai"
+document_date
+string | null
+Preserve original format from doc
+reference_numbers
+string[] | null
+JSON.stringify() before storing
+§4 — Claude Extraction Contract
+System Prompt (exact text)
+You are a logistics document data extraction specialist.
+Extract structured data from the document provided.
+Document type: {DOCUMENT_TYPE}
+Return ONLY a valid JSON object using exactly the structure below.
+For each field: set "value" to the extracted content, or null if not found.
+Set "confidence" to an integer 0-100 reflecting your certainty.
+{
+  "shipper_name":          { "value": "string or null", "confidence": 0-100 },
+  "shipper_address":       { "value": "string or null", "confidence": 0-100 },
+  "consignee_name":        { "value": "string or null", "confidence": 0-100 },
+  "consignee_address":     { "value": "string or null", "confidence": 0-100 },
+  "commodity_description": { "value": "string or null", "confidence": 0-100 },
+  "quantity_and_units":    { "value": "string or null", "confidence": 0-100 },
+  "gross_weight":          { "value": "string or null", "confidence": 0-100 },
+  "net_weight":            { "value": "string or null", "confidence": 0-100 },
+  "country_of_origin":     { "value": "string or null", "confidence": 0-100 },
+  "declared_value":        { "value": "string or null", "confidence": 0-100 },
+  "currency":              { "value": "string or null", "confidence": 0-100 },
+  "incoterms":             { "value": "string or null", "confidence": 0-100 },
+  "document_date":         { "value": "string or null", "confidence": 0-100 },
+  "reference_numbers":     { "value": ["array","of","strings"] or null, "confidence": 0-100 }
+}
+Output the JSON object only. No markdown, no explanation, no code fences.
+Zod Schema (backend/src/types/index.ts)
+import { z } from 'zod';
+const FieldSchema = z.object({
+  value:      z.union([z.string(), z.array(z.string()), z.null()]),
+  confidence: z.number().int().min(0).max(100),
+});
+export const ExtractionResponseSchema = z.object({
+  shipper_name:          FieldSchema,
+  shipper_address:       FieldSchema,
+  consignee_name:        FieldSchema,
+  consignee_address:     FieldSchema,
+  commodity_description: FieldSchema,
+  quantity_and_units:    FieldSchema,
+  gross_weight:          FieldSchema,
+  net_weight:            FieldSchema,
+  country_of_origin:     FieldSchema,
+  declared_value:        FieldSchema,
+  currency:              FieldSchema,
+  incoterms:             FieldSchema,
+  document_date:         FieldSchema,
+  reference_numbers:     FieldSchema,
+});
+export type ExtractionResponse = z.infer<typeof ExtractionResponseSchema>;
+// Helper: strip markdown fences before parsing
+export function cleanJsonText(text: string): string {
+  return text.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+}
+§5 — API Endpoints Reference
+Method
+Path
+Body / Query
+Response
+POST
+/api/documents/upload
+multipart: file, document_type
+201 {documentId, status:"processing"} | 400 | 413
+GET
+/api/documents/:id/status
+—
+200 {status}
+GET
+/api/documents/:id
+—
+200 {document, fields[], history[]}
+GET
+/api/documents/:id/file
+—
+200 binary (PDF/image) | 404
+PUT
+/api/documents/:id/review
+JSON {fields:[{field_name,final_value}]}
+200 {documentId, status:"approved"}
+GET
+/api/documents
+q?, type?, date_from?, date_to?, country?, page?, limit?
+200 {documents[], total, page, totalPages}
+GET
+/api/analytics/field-accuracy
+—
+200 {fields:[{field_name, avg_confidence}]}
+GET
+/api/analytics/trend
+—
+200 {months:[{month, doc_count, avg_confidence}]}
+GET
+/api/analytics/distribution
+—
+200 {distribution:[{tier, count}]}
+§6 — Service Logic
+extractionService.ts — Step-by-Step
+Step
+Action
+1
+SET documents.status = "processing", updated_at = now() WHERE id = documentId
+2
+SELECT id, file_path, document_type FROM documents WHERE id = documentId
+3
+Read file buffer: fs.readFile(path.join(UPLOAD_DIR, doc.file_path))
+4
+Detect MIME type from buffer first 8 bytes → set media_type variable
+5
+Build Claude message: content array with {type:"document"|"image", source:{type:"base64", media_type, data: buf.toString("base64")}} followed by {type:"text", text: PROMPT_WITH_DOC_TYPE}
+6
+await anthropic.messages.create({ model: CLAUDE_MODEL, max_tokens: 2048, messages: [message] })
+7
+const raw = response.content[0].text
+8
+const cleaned = cleanJsonText(raw)   ← strips markdown fences
+9
+const parsed = JSON.parse(cleaned)   ← may throw SyntaxError
+10
+const validated = ExtractionResponseSchema.parse(parsed)   ← may throw ZodError
+11
+If step 9 or 10 throws → RETRY ONCE: rebuild the Claude call with an additional line at the end of the prompt: "Your previous response was invalid JSON. Return ONLY the JSON object." Repeat steps 6–10. If still fails → SET status="failed" → return.
+12
+Compute overall_confidence = mean of all 14 field.confidence values → round to 2dp
+13
+BEGIN TRANSACTION
+14
+UPDATE documents SET status="review", overall_confidence=X, updated_at=now()
+15
+INSERT INTO extracted_fields (14 rows): for each key in validated: { document_id, org_id: DEMO_ORG_ID, field_name: key, ai_value: Array.isArray(val.value) ? JSON.stringify(val.value) : val.value, final_value: same, confidence: val.confidence, was_corrected: false }
+16
+COMMIT
+correctionService.ts — saveReview Logic
+Step
+Action
+1
+SELECT field_name, ai_value FROM extracted_fields WHERE document_id = id → build Map<field_name, ai_value>
+2
+BEGIN TRANSACTION
+3
+For each of the 14 submitted {field_name, final_value}: UPDATE extracted_fields SET final_value=$submitted, was_corrected=(submitted !== ai_value), updated_at=now() WHERE document_id=$id AND field_name=$field_name
+4
+For each field where submitted !== ai_value: INSERT INTO correction_history (document_id, org_id, field_name, ai_value, corrected_value) VALUES (...)
+5
+UPDATE documents SET status="approved", updated_at=now() WHERE id=$id
+6
+COMMIT
+GET /api/documents — Search & Filter SQL
+-- Base query (always scoped to org_id)
+SELECT d.id, d.document_type, d.status, d.overall_confidence,
+       d.uploaded_at, d.original_filename,
+       MAX(CASE WHEN ef.field_name='reference_numbers' THEN ef.final_value END) AS reference_numbers,
+       MAX(CASE WHEN ef.field_name='shipper_name'      THEN ef.final_value END) AS shipper_name,
+       MAX(CASE WHEN ef.field_name='consignee_name'    THEN ef.final_value END) AS consignee_name
+FROM documents d
+LEFT JOIN extracted_fields ef ON ef.document_id = d.id
+WHERE d.org_id = $DEMO_ORG_ID
+-- Applied conditionally:
+AND d.document_type = $type                           -- if ?type provided
+AND d.uploaded_at >= $date_from                       -- if ?date_from provided
+AND d.uploaded_at <= $date_to                         -- if ?date_to provided
+-- Country filter (subquery on extracted_fields):
+AND d.id IN (
+  SELECT document_id FROM extracted_fields
+  WHERE field_name = 'country_of_origin' AND final_value = $country
+)
+-- Search filter (subquery on extracted_fields):
+AND d.id IN (
+  SELECT document_id FROM extracted_fields
+  WHERE field_name IN ('shipper_name','consignee_name','commodity_description','reference_numbers')
+  AND final_value ILIKE $q_pattern    -- $q_pattern = '%' || q || '%'
+)
+GROUP BY d.id
+ORDER BY d.uploaded_at DESC
+LIMIT $limit OFFSET $offset
+§7 — Environment Variables
+Variable
+Default
+Required
+Description
+DATABASE_URL
+—
+Yes
+PostgreSQL connection string. docker-compose provides: postgresql://fdih_user:fdih_password@localhost:5432/fdih_dev
+ANTHROPIC_API_KEY
+—
+Yes
+Anthropic API key. Get from console.anthropic.com.
+CLAUDE_MODEL
+claude-sonnet-4-5-20250929
+No
+Claude model identifier. Must match brief.
+UPLOAD_DIR
+./uploads
+No
+Filesystem path for uploaded files. Relative to backend root.
+DEMO_ORG_ID
+00000000-0000-0000-0000-000000000001
+No
+UUID of the single demo org. Used on all DB inserts.
+PORT
+3001
+No
+Express server port.
+NODE_ENV
+development
+No
+Set to production for production builds.
+NEXT_PUBLIC_API_URL
+http://localhost:3001
+No
+Backend URL as seen by the browser. Must start with NEXT_PUBLIC_.
+§8 — Configuration Files
+docker-compose.yml
+version: '3.8'
+services:
+  postgres:
+    image: postgres:15
+    ports: ['5432:5432']
+    environment:
+      POSTGRES_DB: fdih_dev
+      POSTGRES_USER: fdih_user
+      POSTGRES_PASSWORD: fdih_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL','pg_isready -U fdih_user -d fdih_dev']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+volumes:
+  postgres_data:
+Root package.json
+{
+  "name": "fdih",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
+    "migrate": "npm run migrate --prefix backend",
+    "build": "npm run build --prefix backend && npm run build --prefix frontend"
+  },
+  "devDependencies": {
+    "concurrently": "^8.0.0"
+  }
+}
+backend/package.json (key dependencies)
+{
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.0",
+    "cors": "^2.8.5",
+    "express": "^4.18.0",
+    "multer": "^1.4.5",
+    "pg": "^8.11.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.0",
+    "@types/express": "^4.17.0",
+    "@types/multer": "^1.4.0",
+    "@types/pg": "^8.10.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.0.0"
+  },
+  "scripts": {
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "migrate": "ts-node src/db/migrate.ts",
+    "build": "tsc"
+  }
+}
+frontend/package.json (key dependencies)
+{
+  "dependencies": {
+    "next": "14.2.0",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "recharts": "^2.10.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.0.0",
+    "autoprefixer": "^10.0.0",
+    "postcss": "^8.0.0",
+    "tailwindcss": "^3.4.0",
+    "typescript": "^5.0.0"
+  },
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start"
+  }
+}
+§9 — Critical Implementation Rules
+#
+Rule
+1
+NO AUTH ANYWHERE. No Authorization header checks, no JWT, no session middleware. Every Express route is open. Every Next.js page renders without a session check.
+2
+org_id IS ALWAYS process.env.DEMO_ORG_ID. Never read from request body, params, or query string.
+3
+ZOD BEFORE EVERY DB WRITE. ExtractionResponseSchema.parse() must succeed before any INSERT into extracted_fields. Never write partial data.
+4
+CORRECTION_HISTORY IS APPEND-ONLY. Never UPDATE or DELETE from correction_history. The DB trigger enforces this — any attempt will throw a PostgreSQL exception.
+5
+FIRE AND FORGET extraction. The upload route handler calls extractionService.extractDocument(id) WITHOUT await and then returns the HTTP 201 response. Never block the HTTP response waiting for Claude.
+6
+POLL FOR STATUS. Frontend polls GET /api/documents/:id/status every 2 seconds until status is not "processing". Use setInterval, clear on status change or component unmount.
+7
+FILE PATH SANITISATION. Before writing any file: strip ../ and ./ from filename with a regex. Store only the relative path {documentId}/{sanitised_filename} in the DB.
+8
+reference_numbers STORAGE. Always JSON.stringify(array) before storing in ai_value or final_value. Always JSON.parse(string) when reading back. Never store a raw JS array.
+9
+WRAP CLAUDE IN TRY/CATCH. Every code path through extractionService is wrapped. On any error: set status="failed", log the error with console.error, return. Never re-throw to the Express unhandled rejection handler.
+10
+TRANSACTION INTEGRITY. extractionService and correctionService both use BEGIN/COMMIT. If any statement in the transaction throws, ROLLBACK and re-throw to the calling catch block — which sets status="failed".
+— End of Architecture & Data Model — FDIH v1.0 —
