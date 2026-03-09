@@ -1,13 +1,12 @@
 // FR-004, FR-005, FR-006, FR-007, FR-008
 
-import fs from 'fs';
 import path from 'path';
 import { pool } from '../db/pool';
 import { callClaude } from '../adapters/claudeClient';
+import { downloadFile } from '../adapters/storageService';
 import { ExtractionResponseSchema, cleanJsonText, FIELD_NAMES } from '../types';
 import type { ExtractionResponse } from '../types';
 
-const UPLOAD_DIR = process.env.UPLOAD_DIR ?? './uploads';
 const DEMO_ORG_ID = process.env.DEMO_ORG_ID!;
 
 function serializeValue(val: string | string[] | null): string | null {
@@ -47,9 +46,8 @@ export async function extractDocument(documentId: string): Promise<void> {
         if (rows.length === 0) throw new Error(`Document ${documentId} not found`);
         const doc = rows[0];
 
-        // Step 3 — read file from disk
-        const fullPath = path.join(UPLOAD_DIR, doc.file_path);
-        const fileBuffer = await fs.promises.readFile(fullPath);
+        // Step 3 — download file from storage (S3 or local)
+        const fileBuffer = await downloadFile(doc.file_path);
 
         // Step 4 — detect MIME from extension (already validated at upload)
         const ext = path.extname(doc.original_filename).toLowerCase();

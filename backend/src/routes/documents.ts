@@ -1,7 +1,6 @@
 // All FR references noted per handler
 
 import express, { Request, Response, NextFunction } from 'express';
-import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { pool } from '../db/pool';
@@ -9,10 +8,10 @@ import { uploadMiddleware, validateMimeByBytes } from '../middleware/upload';
 import { extractDocument } from '../services/extractionService';
 import { saveReview } from '../services/correctionService';
 import { ValidationError, NotFoundError } from '../errors/AppError';
+import { uploadFile, downloadFile } from '../adapters/storageService';
 import type { ReviewField } from '../services/correctionService';
 
 const router = express.Router();
-const UPLOAD_DIR = process.env.UPLOAD_DIR ?? './uploads';
 const DEMO_ORG_ID = process.env.DEMO_ORG_ID!;
 
 const VALID_DOC_TYPES = ['commercial_invoice', 'packing_list', 'bill_of_lading'];
@@ -54,20 +53,18 @@ router.post('/upload', (req: Request, res: Response, next: NextFunction) => {
                 return;
             }
 
-            // Write file to disk [FR-003]
+            // Upload file to storage (S3 or local) [FR-003]
             const documentId = uuidv4();
             const sanitised = sanitiseFilename(req.file.originalname);
-            const relPath = `${documentId}/${sanitised}`;
-            const absDir = path.join(UPLOAD_DIR, documentId);
+            const fileKey = `${documentId}/${sanitised}`;
 
-            await fs.promises.mkdir(absDir, { recursive: true });
-            await fs.promises.writeFile(path.join(UPLOAD_DIR, relPath), req.file.buffer);
+            await uploadFile(fileKey, req.file.buffer, req.file.mimetype);
 
             // Create document record
             await pool.query(
                 `INSERT INTO documents (id, org_id, document_type, status, file_path, original_filename)
          VALUES ($1, $2, $3, 'pending', $4, $5)`,
-                [documentId, DEMO_ORG_ID, documentType, relPath, req.file.originalname]
+                [documentId, DEMO_ORG_ID, documentType, fileKey, req.file.originalname]
             );
 
             // Fire-and-forget extraction [FR-004]
@@ -122,8 +119,7 @@ router.get('/:id/file', async (req: Request, res: Response, next: NextFunction) 
         );
         if (rows.length === 0) throw new NotFoundError('Document not found');
 
-        const absPath = path.join(UPLOAD_DIR, rows[0].file_path);
-        if (!fs.existsSync(absPath)) throw new NotFoundError('File not found on disk');
+        const fileBuffer = await downloadFile(rows[0].file_path);
 
         const ext = path.extname(rows[0].original_filename).toLowerCase();
         const mimeMap: Record<string, string> = {
@@ -134,7 +130,7 @@ router.get('/:id/file', async (req: Request, res: Response, next: NextFunction) 
 
         res.setHeader('Content-Type', mime);
         res.setHeader('Content-Disposition', 'inline');
-        fs.createReadStream(absPath).pipe(res);
+        res.send(fileBuffer);
     } catch (err) { next(err); }
 });
 
