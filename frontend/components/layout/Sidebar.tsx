@@ -5,8 +5,15 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { LayoutDashboard, Upload, BarChart2 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { ThemeToggle } from '../ui/ThemeToggle';
 
-export function Sidebar({ className }: { className?: string }) {
+interface SidebarProps {
+    className?: string;
+    theme?: 'light' | 'dark';
+    onThemeToggle?: () => void;
+}
+
+export function Sidebar({ className, theme, onThemeToggle }: SidebarProps) {
     const pathname = usePathname();
 
     const active = (href: string) =>
@@ -62,6 +69,15 @@ export function Sidebar({ className }: { className?: string }) {
                     <span className="hidden lg:block text-sm font-medium">Analytics</span>
                 </Link>
             </nav>
+            {theme && onThemeToggle && (
+                <div className="p-2 border-t border-slate-200">
+                    <ThemeToggle
+                        theme={theme}
+                        onToggle={onThemeToggle}
+                        className="w-full justify-center lg:justify-start"
+                    />
+                </div>
+            )}
         </aside>
     );
 }

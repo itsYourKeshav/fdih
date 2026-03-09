@@ -1,5 +1,8 @@
 import React from 'react';
 import { Card } from '../ui/Card';
+import { Btn } from '../ui/Btn';
+import { LoadingSpinner } from '../ui/LoadingSpinner';
+import { ExternalLink, Download } from 'lucide-react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -16,9 +19,17 @@ export function FilePreview({
 }) {
     const isImage = /\.(jpg|jpeg|png|gif)$/i.test(filename);
     const fileUrl = `${API_URL}/api/documents/${documentId}/file`;
+    const [isLoading, setIsLoading] = React.useState(true);
+    const [pdfView, setPdfView] = React.useState<'FitH' | 'page-width' | '100'>('FitH');
+
+    React.useEffect(() => {
+        setIsLoading(true);
+    }, [documentId, filename, isOpen, pdfView]);
+
+    const iframeSrc = `${fileUrl}#toolbar=0&view=${pdfView}`;
 
     return (
-        <Card className="flex flex-col overflow-hidden bg-slate-100 border-none shadow-inner w-full min-h-[400px]">
+        <Card className="flex flex-col overflow-hidden bg-slate-100 border border-slate-200 shadow-sm w-full min-h-[400px]">
             {onToggle && (
                 <button
                     onClick={onToggle}
@@ -31,10 +42,74 @@ export function FilePreview({
 
             {isOpen && (
                 <div className="flex-1 w-full relative">
+                    <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white/80 p-3 backdrop-blur">
+                        <p className="max-w-[60%] truncate text-xs font-medium text-slate-600" title={filename}>
+                            {filename}
+                        </p>
+                        {!isImage && (
+                            <div className="ml-auto flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 p-1">
+                                <button
+                                    type="button"
+                                    onClick={() => setPdfView('FitH')}
+                                    className={`rounded px-2 py-1 text-[11px] font-semibold ${pdfView === 'FitH' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-200'}`}
+                                >
+                                    Fit
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setPdfView('page-width')}
+                                    className={`rounded px-2 py-1 text-[11px] font-semibold ${pdfView === 'page-width' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-200'}`}
+                                >
+                                    Width
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setPdfView('100')}
+                                    className={`rounded px-2 py-1 text-[11px] font-semibold ${pdfView === '100' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-200'}`}
+                                >
+                                    100%
+                                </button>
+                            </div>
+                        )}
+                        <div className="flex items-center gap-2">
+                            <a href={fileUrl} target="_blank" rel="noreferrer">
+                                <Btn size="sm" variant="ghost" className="gap-1">
+                                    <ExternalLink className="h-3.5 w-3.5" />
+                                    Open
+                                </Btn>
+                            </a>
+                            <a href={fileUrl} download>
+                                <Btn size="sm" variant="ghost" className="gap-1">
+                                    <Download className="h-3.5 w-3.5" />
+                                    Download
+                                </Btn>
+                            </a>
+                        </div>
+                    </div>
+
+                    {isLoading && (
+                        <div className="absolute inset-x-0 bottom-0 top-14 z-10 flex items-center justify-center bg-slate-100/80 backdrop-blur-sm">
+                            <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white/90 px-4 py-2 text-sm text-slate-600">
+                                <LoadingSpinner size="sm" />
+                                Rendering preview...
+                            </div>
+                        </div>
+                    )}
+
                     {isImage ? (
-                        <img src={fileUrl} alt={filename} className="w-full h-auto object-contain max-h-[80vh] md:max-h-none p-4" />
+                        <img
+                            src={fileUrl}
+                            alt={filename}
+                            onLoad={() => setIsLoading(false)}
+                            className="w-full h-auto object-contain max-h-[80vh] md:max-h-none p-4"
+                        />
                     ) : (
-                        <iframe src={`${fileUrl}#toolbar=0&view=FitH`} className="w-full h-[60vh] md:h-[calc(100vh-8rem)] absolute inset-0 border-0" title={filename} />
+                        <iframe
+                            src={iframeSrc}
+                            onLoad={() => setIsLoading(false)}
+                            className="w-full h-[60vh] md:h-[calc(100vh-11rem)] border-0"
+                            title={filename}
+                        />
                     )}
                 </div>
             )}

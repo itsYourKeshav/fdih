@@ -1,19 +1,36 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Menu } from 'lucide-react';
 import { Sidebar } from '../components/layout/Sidebar';
 import { MobileDrawer } from '../components/layout/MobileDrawer';
+import { ThemeToggle } from '../components/ui/ThemeToggle';
 import './globals.css';
 import type { Metadata } from 'next';
 
 function AppLayout({ children }: { children: React.ReactNode }) {
     const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
+    const [theme, setTheme] = useState<'light' | 'dark'>('light');
+
+    useEffect(() => {
+        const savedTheme = (localStorage.getItem('fdih-theme') as 'light' | 'dark' | null) ?? 'light';
+        setTheme(savedTheme);
+    }, []);
+
+    useEffect(() => {
+        const root = document.documentElement;
+        root.classList.toggle('theme-dark', theme === 'dark');
+        localStorage.setItem('fdih-theme', theme);
+    }, [theme]);
+
+    const toggleTheme = () => {
+        setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
+    };
 
     return (
-        <div className="flex min-h-screen">
+        <div className="flex min-h-screen bg-slate-50">
             {/* Sidebar - hidden on mobile, visible on lg */}
-            <Sidebar />
+            <Sidebar theme={theme} onThemeToggle={toggleTheme} />
             {/* Spacer for fixed sidebar */}
             <div className="w-14 lg:w-56 shrink-0" />
 
@@ -28,6 +45,7 @@ function AppLayout({ children }: { children: React.ReactNode }) {
                         <Menu className="w-6 h-6 text-slate-600" />
                     </button>
                     <span className="ml-3 font-semibold text-slate-900">FDIH</span>
+                    <ThemeToggle theme={theme} onToggle={toggleTheme} className="ml-auto" />
                 </div>
                 <main className="flex-1 overflow-auto">{children}</main>
             </div>
@@ -42,12 +60,12 @@ function AppLayout({ children }: { children: React.ReactNode }) {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
     return (
-        <html lang="en">
+        <html lang="en" suppressHydrationWarning>
             <head>
                 <title>FDIH — Freight Document Intelligence Hub</title>
                 <meta name="description" content="AI-powered freight document extraction and review platform by Aulintri" />
             </head>
-            <body className="bg-slate-50 text-slate-900 font-sans antialiased">
+            <body className="bg-slate-50 text-slate-900 font-sans antialiased transition-colors duration-200">
                 <AppLayout>{children}</AppLayout>
             </body>
         </html>
