@@ -10,7 +10,7 @@ import { LoadingSpinner } from '../../../components/ui/LoadingSpinner';
 import { Card } from '../../../components/ui/Card';
 import { AlertCircle, Check } from 'lucide-react';
 import { DocumentDetailResponse } from '../../../lib/types';
-import { getDocument, reviewDocument } from '../../../lib/api';
+import { getDocument, reviewDocument, deleteDocument } from '../../../lib/api';
 
 export default function ReviewPage() {
     const router = useRouter();
@@ -25,6 +25,8 @@ export default function ReviewPage() {
     const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
     const [editedFields, setEditedFields] = useState<Set<string>>(new Set());
     const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [deleting, setDeleting] = useState(false);
     const [previewOpen, setPreviewOpen] = useState(false); // Mobile
 
     useEffect(() => {
@@ -80,6 +82,19 @@ export default function ReviewPage() {
         });
     };
 
+    const handleDelete = async () => {
+        if (!data) return;
+        try {
+            setDeleting(true);
+            await deleteDocument(id);
+            router.push('/');
+        } catch (e: any) {
+            alert(e.message || 'Failed to delete document');
+            setDeleting(false);
+            setShowDeleteConfirm(false);
+        }
+    };
+
     const handleSave = async () => {
         if (!data) return;
         try {
@@ -120,6 +135,18 @@ export default function ReviewPage() {
         <div className="flex flex-col h-full bg-slate-50 relative">
             <PageHeader title="Review Extraction">
                 <div className="flex gap-2">
+                    <div className="relative">
+                        <Btn variant="danger" onClick={() => setShowDeleteConfirm(!showDeleteConfirm)} disabled={deleting}>Delete</Btn>
+                        {showDeleteConfirm && (
+                            <Card className="absolute top-12 right-0 p-4 w-60 z-20">
+                                <p className="text-sm font-medium mb-3">Delete this document and all its data?</p>
+                                <div className="flex gap-2">
+                                    <Btn size="sm" variant="ghost" className="flex-1" onClick={() => setShowDeleteConfirm(false)}>Cancel</Btn>
+                                    <Btn size="sm" variant="danger" className="flex-1" onClick={handleDelete} loading={deleting}>Delete</Btn>
+                                </div>
+                            </Card>
+                        )}
+                    </div>
                     {editedFields.size > 0 ? (
                         <div className="relative">
                             <Btn variant="ghost" onClick={() => setShowDiscardConfirm(!showDiscardConfirm)}>Discard Changes</Btn>

@@ -52,6 +52,12 @@ export async function reviewDocument(id: string, fields: ReviewField[]): Promise
     });
 }
 
+export async function deleteDocument(id: string): Promise<{ message: string }> {
+    return apiFetch<{ message: string }>(`/api/documents/${id}`, {
+        method: 'DELETE',
+    });
+}
+
 export async function listDocuments(params: Record<string, string | undefined>): Promise<DocumentListResponse> {
     const query = new URLSearchParams();
     for (const [key, value] of Object.entries(params)) {

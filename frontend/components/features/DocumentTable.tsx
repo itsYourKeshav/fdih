@@ -1,4 +1,6 @@
-import React from 'react';
+'use client';
+
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { DocumentListItem } from '../../lib/types';
 import { TypeBadge } from '../ui/TypeBadge';
@@ -6,11 +8,96 @@ import { ConfBadge } from '../ui/ConfBadge';
 import { StatusBadge } from '../ui/StatusBadge';
 import { formatDate, truncate } from '../../lib/utils';
 import { Card } from '../ui/Card';
+import { Btn } from '../ui/Btn';
+import { LoadingSpinner } from '../ui/LoadingSpinner';
+import { EmptyState } from '../ui/EmptyState';
+import { FileText, ChevronLeft, ChevronRight } from 'lucide-react';
+import { listDocuments } from '../../lib/api';
 
-export function DocumentTable({ documents }: { documents: DocumentListItem[] }) {
+interface DocumentTableProps {
+    filters: {
+        q: string;
+        type: string;
+        dateFrom: string;
+        dateTo: string;
+        country: string;
+    };
+    onClearFilters?: () => void;
+}
+
+export function DocumentTable({ filters, onClearFilters }: DocumentTableProps) {
     const router = useRouter();
+    const [documents, setDocuments] = useState<DocumentListItem[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [page, setPage] = useState(1);
+    const [total, setTotal] = useState(0);
+    const [totalPages, setTotalPages] = useState(0);
+    const limit = 20;
 
-    if (documents.length === 0) return null;
+    const hasFilters = Boolean(filters.q || filters.type || filters.dateFrom || filters.dateTo || filters.country);
+
+    const fetchDocuments = useCallback(async () => {
+        try {
+            setLoading(true);
+            setError(null);
+            const res = await listDocuments({
+                q: filters.q,
+                type: filters.type,
+                date_from: filters.dateFrom,
+                date_to: filters.dateTo,
+                country: filters.country,
+                page: page.toString(),
+                limit: limit.toString()
+            });
+            setDocuments(res.documents);
+            setTotal(res.total);
+            setTotalPages(res.totalPages);
+        } catch (e: any) {
+            setError(e.message || 'Failed to fetch documents');
+        } finally {
+            setLoading(false);
+        }
+    }, [filters.q, filters.type, filters.dateFrom, filters.dateTo, filters.country, page]);
+
+    useEffect(() => {
+        fetchDocuments();
+    }, [fetchDocuments]);
+
+    // Reset to page 1 when filters change
+    useEffect(() => {
+        setPage(1);
+    }, [filters.q, filters.type, filters.dateFrom, filters.dateTo, filters.country]);
+
+    if (loading) {
+        return (
+            <Card className="p-16 flex items-center justify-center min-h-[400px]">
+                <LoadingSpinner size="lg" />
+            </Card>
+        );
+    }
+
+    if (error) {
+        return (
+            <Card className="p-16 flex flex-col items-center justify-center text-center">
+                <p className="text-rose-600 mb-4">{error}</p>
+                <Btn variant="ghost" onClick={fetchDocuments}>Retry</Btn>
+            </Card>
+        );
+    }
+
+    if (documents.length === 0) {
+        return (
+            <Card className="min-h-[400px] flex items-center justify-center">
+                <EmptyState
+                    icon={<FileText />}
+                    heading={hasFilters ? 'No matches found' : 'No documents yet'}
+                    subtext={hasFilters ? 'Try adjusting your filters' : 'Upload your first logistics document to get started.'}
+                    action={hasFilters && onClearFilters ? { label: 'Clear filters', onClick: onClearFilters } : undefined}
+                />
+            </Card>
+        );
+    }
 
     return (
         <div className="w-full">
@@ -92,6 +179,69 @@ export function DocumentTable({ documents }: { documents: DocumentListItem[] }) 
                     );
                 })}
             </div>
+
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+                <Card className="mt-4 p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="text-sm text-slate-600">
+                        Showing <span className="font-semibold text-slate-900">{(page - 1) * limit + 1}</span> to{' '}
+                        <span className="font-semibold text-slate-900">{Math.min(page * limit, total)}</span> of{' '}
+                        <span className="font-semibold text-slate-900">{total}</span> results
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <Btn
+                            variant="outline"
+                            size="sm"
+                            disabled={page === 1}
+                            onClick={() => setPage(prev => Math.max(1, prev - 1))}
+                            className="gap-1"
+                        >
+                            <ChevronLeft className="w-4 h-4" />
+                            Previous
+                        </Btn>
+                        <div className="hidden sm:flex items-center gap-1">
+                            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                                let pageNum;
+                                if (totalPages <= 5) {
+                                    pageNum = i + 1;
+                                } else if (page <= 3) {
+                                    pageNum = i + 1;
+                                } else if (page >= totalPages - 2) {
+                                    pageNum = totalPages - 4 + i;
+                                } else {
+                                    pageNum = page - 2 + i;
+                                }
+                                return (
+                                    <button
+                                        key={pageNum}
+                                        onClick={() => setPage(pageNum)}
+                                        className={`w-8 h-8 rounded text-sm font-medium transition-colors ${
+                                            page === pageNum
+                                                ? 'bg-blue-600 text-white'
+                                                : 'text-slate-600 hover:bg-slate-100'
+                                        }`}
+                                    >
+                                        {pageNum}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        <div className="sm:hidden text-sm text-slate-600 font-medium px-3">
+                            Page {page} of {totalPages}
+                        </div>
+                        <Btn
+                            variant="outline"
+                            size="sm"
+                            disabled={page === totalPages}
+                            onClick={() => setPage(prev => Math.min(totalPages, prev + 1))}
+                            className="gap-1"
+                        >
+                            Next
+                            <ChevronRight className="w-4 h-4" />
+                        </Btn>
+                    </div>
+                </Card>
+            )}
         </div>
     );
 }

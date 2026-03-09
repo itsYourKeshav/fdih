@@ -20,13 +20,12 @@ export function FilePreview({
     const isImage = /\.(jpg|jpeg|png|gif)$/i.test(filename);
     const fileUrl = `${API_URL}/api/documents/${documentId}/file`;
     const [isLoading, setIsLoading] = React.useState(true);
-    const [pdfView, setPdfView] = React.useState<'FitH' | 'page-width' | '100'>('FitH');
 
     React.useEffect(() => {
         setIsLoading(true);
-    }, [documentId, filename, isOpen, pdfView]);
+    }, [documentId, filename, isOpen]);
 
-    const iframeSrc = `${fileUrl}#toolbar=0&view=${pdfView}`;
+    const iframeSrc = `${fileUrl}#toolbar=0&view=FitH`;
 
     return (
         <Card className="flex flex-col overflow-hidden bg-slate-100 border border-slate-200 shadow-sm w-full min-h-[400px]">
@@ -46,32 +45,7 @@ export function FilePreview({
                         <p className="max-w-[60%] truncate text-xs font-medium text-slate-600" title={filename}>
                             {filename}
                         </p>
-                        {!isImage && (
-                            <div className="ml-auto flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 p-1">
-                                <button
-                                    type="button"
-                                    onClick={() => setPdfView('FitH')}
-                                    className={`rounded px-2 py-1 text-[11px] font-semibold ${pdfView === 'FitH' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-200'}`}
-                                >
-                                    Fit
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setPdfView('page-width')}
-                                    className={`rounded px-2 py-1 text-[11px] font-semibold ${pdfView === 'page-width' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-200'}`}
-                                >
-                                    Width
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setPdfView('100')}
-                                    className={`rounded px-2 py-1 text-[11px] font-semibold ${pdfView === '100' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-200'}`}
-                                >
-                                    100%
-                                </button>
-                            </div>
-                        )}
-                        <div className="flex items-center gap-2">
+                        <div className="ml-auto flex items-center gap-2">
                             <a href={fileUrl} target="_blank" rel="noreferrer">
                                 <Btn size="sm" variant="ghost" className="gap-1">
                                     <ExternalLink className="h-3.5 w-3.5" />
