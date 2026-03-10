@@ -147,7 +147,7 @@ export function DocumentTable({ filters, onClearFilters }: DocumentTableProps) {
                             return (
                                 <tr
                                     key={doc.id}
-                                    onClick={() => router.push(doc.status === 'review' ? `/review/${doc.id}` : `/documents/${doc.id}`)}
+                                    onClick={() => router.push(doc.status === 'review' ? `/review?id=${doc.id}` : `/documents?id=${doc.id}`)}
                                     className="hover:bg-slate-50 cursor-pointer transition-colors"
                                 >
                                     <td className="px-4 py-3"><TypeBadge type={doc.document_type} /></td>
@@ -192,7 +192,7 @@ export function DocumentTable({ filters, onClearFilters }: DocumentTableProps) {
                     return (
                         <div
                             key={doc.id}
-                            onClick={() => router.push(doc.status === 'review' ? `/review/${doc.id}` : `/documents/${doc.id}`)}
+                            onClick={() => router.push(doc.status === 'review' ? `/review?id=${doc.id}` : `/documents?id=${doc.id}`)}
                         >
                             <Card className="p-4 cursor-pointer hover:bg-slate-50 transition-colors">
                                 <div className="flex justify-between items-start mb-3">

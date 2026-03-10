@@ -1,27 +1,28 @@
 'use client';
 
+import { Suspense } from 'react';
 import React, { useEffect, useState } from 'react';
-import { useRouter, useParams } from 'next/navigation';
-import { PageHeader } from '../../../components/layout/PageHeader';
-import { FilePreview } from '../../../components/features/FilePreview';
-import { FieldForm } from '../../../components/features/FieldForm';
-import { Btn } from '../../../components/ui/Btn';
-import { LoadingSpinner } from '../../../components/ui/LoadingSpinner';
-import { Card } from '../../../components/ui/Card';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { PageHeader } from '../../components/layout/PageHeader';
+import { FilePreview } from '../../components/features/FilePreview';
+import { FieldForm } from '../../components/features/FieldForm';
+import { Btn } from '../../components/ui/Btn';
+import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { Card } from '../../components/ui/Card';
 import { AlertCircle, AlertTriangle, Check } from 'lucide-react';
-import { DocumentDetailResponse } from '../../../lib/types';
+import { DocumentDetailResponse } from '../../lib/types';
 import {
     DuplicateCheckResult,
     deleteDocument,
     getDocument,
     getDuplicateCheck,
     reviewDocument,
-} from '../../../lib/api';
+} from '../../lib/api';
 
-export default function ReviewPage() {
+function ReviewPageContent() {
     const router = useRouter();
-    const params = useParams();
-    const id = params.id as string;
+    const searchParams = useSearchParams();
+    const id = searchParams.get('id') || '';
 
     const [data, setData] = useState<DocumentDetailResponse | null>(null);
     const [loading, setLoading] = useState(true);
@@ -33,17 +34,22 @@ export default function ReviewPage() {
     const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [deleting, setDeleting] = useState(false);
-    const [previewOpen, setPreviewOpen] = useState(false); // Mobile
+    const [previewOpen, setPreviewOpen] = useState(false);
     const [dupMatch, setDupMatch] =
         useState<DuplicateCheckResult['potentialDuplicateOf']>(null);
 
     useEffect(() => {
         async function fetchDoc() {
+            if (!id) {
+                setError('Document id is required');
+                setLoading(false);
+                return;
+            }
+
             try {
                 setLoading(true);
                 const res = await getDocument(id);
 
-                // initialize field values
                 const initVals: Record<string, string> = {};
                 res.fields.forEach(f => {
                     if (f.field_name === 'reference_numbers' && f.ai_value) {
@@ -65,7 +71,7 @@ export default function ReviewPage() {
                     const dup = await getDuplicateCheck(id);
                     setDupMatch(dup.potentialDuplicateOf);
                 } catch {
-                    // non-blocking — silently ignore, never show error to user
+                    // Non-blocking duplicate lookup.
                 }
             } catch (e: any) {
                 setError(e.message || 'Failed to fetch document');
@@ -80,7 +86,6 @@ export default function ReviewPage() {
         setFieldValues(prev => ({ ...prev, [name]: value }));
         const original = data?.fields.find(f => f.field_name === name)?.ai_value || '';
 
-        // special check for reference numbers
         let origComp = original;
         if (name === 'reference_numbers' && original) {
             try {
@@ -129,9 +134,9 @@ export default function ReviewPage() {
             });
 
             await reviewDocument(id, fieldsToSave);
-            router.push(`/documents/${id}`);
+            router.push(`/documents?id=${id}`);
         } catch (e: any) {
-            alert(e.message || 'Failed to save review'); // simple error handling
+            alert(e.message || 'Failed to save review');
             setSaving(false);
         }
     };
@@ -222,7 +227,7 @@ export default function ReviewPage() {
                             </div>
                         </div>
                         <a
-                            href={`/documents/${dupMatch.id}`}
+                            href={`/documents?id=${dupMatch.id}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-sm font-semibold hover:underline self-start sm:self-center flex-shrink-0 whitespace-nowrap review-dup-link"
@@ -255,7 +260,6 @@ export default function ReviewPage() {
                             <span className="text-xs font-normal text-slate-500 bg-slate-200 px-2 rounded-full py-0.5">{data.fields.length} Fields</span>
                         </h2>
                         <div className="flex-1 overflow-auto pr-2 custom-scrollbar">
-                            {/* Mobile Preview Toggle */}
                             <div className="md:hidden mb-4">
                                 <FilePreview
                                     documentId={data.document.id}
@@ -277,5 +281,13 @@ export default function ReviewPage() {
                 </div>
             </div>
         </div>
+    );
+}
+
+export default function ReviewPage() {
+    return (
+        <Suspense fallback={<div className="p-16 flex items-center justify-center h-full"><LoadingSpinner size="lg" /></div>}>
+            <ReviewPageContent />
+        </Suspense>
     );
 }

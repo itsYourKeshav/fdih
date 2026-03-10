@@ -103,10 +103,10 @@ export default function UploadPage() {
                     const res = await getDocumentStatus(processingDocId);
                     if (res.status === 'review') {
                         clearInterval(interval);
-                        router.push(`/review/${processingDocId}`);
+                        router.push(`/review?id=${processingDocId}`);
                     } else if (res.status === 'approved') {
                         clearInterval(interval);
-                        router.push(`/documents/${processingDocId}`);
+                        router.push(`/documents?id=${processingDocId}`);
                     } else if (res.status === 'failed') {
                         clearInterval(interval);
                         setErrorMsg('Extraction failed');

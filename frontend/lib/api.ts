@@ -8,7 +8,7 @@ import {
     DistributionTier,
 } from './types';
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 async function apiFetch<T>(endpoint: string, options?: RequestInit): Promise<T> {
     const res = await fetch(`${BASE_URL}${endpoint}`, options);

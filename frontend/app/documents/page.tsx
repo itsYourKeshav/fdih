@@ -1,25 +1,26 @@
 'use client';
 
+import { Suspense } from 'react';
 import React, { useEffect, useState } from 'react';
-import { useRouter, useParams } from 'next/navigation';
-import { PageHeader } from '../../../components/layout/PageHeader';
-import { FilePreview } from '../../../components/features/FilePreview';
-import { CorrectionHistory } from '../../../components/features/CorrectionHistory';
-import { Btn } from '../../../components/ui/Btn';
-import { TypeBadge } from '../../../components/ui/TypeBadge';
-import { StatusBadge } from '../../../components/ui/StatusBadge';
-import { ConfBadge } from '../../../components/ui/ConfBadge';
-import { LoadingSpinner } from '../../../components/ui/LoadingSpinner';
-import { Card } from '../../../components/ui/Card';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { PageHeader } from '../../components/layout/PageHeader';
+import { FilePreview } from '../../components/features/FilePreview';
+import { CorrectionHistory } from '../../components/features/CorrectionHistory';
+import { Btn } from '../../components/ui/Btn';
+import { TypeBadge } from '../../components/ui/TypeBadge';
+import { StatusBadge } from '../../components/ui/StatusBadge';
+import { ConfBadge } from '../../components/ui/ConfBadge';
+import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { Card } from '../../components/ui/Card';
 import { ArrowLeft } from 'lucide-react';
-import { DocumentDetailResponse } from '../../../lib/types';
-import { getDocument, retryDocument } from '../../../lib/api';
-import { FIELD_LABELS, cn } from '../../../lib/utils';
+import { DocumentDetailResponse } from '../../lib/types';
+import { getDocument, retryDocument } from '../../lib/api';
+import { FIELD_LABELS, cn } from '../../lib/utils';
 
-export default function DocumentDetailPage() {
+function DocumentDetailPageContent() {
     const router = useRouter();
-    const params = useParams();
-    const id = params.id as string;
+    const searchParams = useSearchParams();
+    const id = searchParams.get('id') || '';
 
     const [data, setData] = useState<DocumentDetailResponse | null>(null);
     const [loading, setLoading] = useState(true);
@@ -28,6 +29,12 @@ export default function DocumentDetailPage() {
 
     useEffect(() => {
         async function fetchDoc() {
+            if (!id) {
+                setError('Document id is required');
+                setLoading(false);
+                return;
+            }
+
             try {
                 setLoading(true);
                 const res = await getDocument(id);
@@ -112,8 +119,6 @@ export default function DocumentDetailPage() {
 
             <div className="flex-1 p-4 lg:p-6 overflow-hidden">
                 <div className="grid grid-cols-1 md:grid-cols-[280px_1fr] lg:grid-cols-[400px_1fr] gap-6 h-full">
-
-                    {/* Left Panel: Preview */}
                     <div className="h-full flex flex-col min-h-0 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 shrink-0 bg-slate-50">
                             <h2 className="text-sm font-semibold text-slate-900">Original Document</h2>
@@ -124,7 +129,6 @@ export default function DocumentDetailPage() {
                         </div>
                     </div>
 
-                    {/* Right Panel: Data & History */}
                     <div className="h-full flex flex-col min-h-0 gap-6 overflow-auto pr-2 custom-scrollbar pb-8">
                         <section className="bg-white rounded-xl p-6 shadow-sm border border-slate-200 shrink-0">
                             <h2 className="text-base font-semibold text-slate-900 mb-4 border-b border-slate-100 pb-2">Extracted Fields</h2>
@@ -139,7 +143,7 @@ export default function DocumentDetailPage() {
                                     }
 
                                     return (
-                                        <Card key={field.id} className={cn("p-3 sm:p-4 border-slate-100 shadow-none bg-slate-50/50", field.was_corrected && 'border-amber-100 bg-amber-50/30')}>
+                                        <Card key={field.id} className={cn('p-3 sm:p-4 border-slate-100 shadow-none bg-slate-50/50', field.was_corrected && 'border-amber-100 bg-amber-50/30')}>
                                             <div className="flex items-center justify-between mb-1.5 gap-2">
                                                 <span className="text-xs font-semibold text-slate-500 uppercase tracking-widest leading-none truncate" title={FIELD_LABELS[field.field_name] || field.field_name}>
                                                     {FIELD_LABELS[field.field_name] || field.field_name}
@@ -163,7 +167,7 @@ export default function DocumentDetailPage() {
                                                 {parsedValue || <span className="text-slate-400 italic font-normal">Not extracted</span>}
                                             </p>
                                         </Card>
-                                    )
+                                    );
                                 })}
                             </div>
                         </section>
@@ -173,5 +177,13 @@ export default function DocumentDetailPage() {
                 </div>
             </div>
         </div>
+    );
+}
+
+export default function DocumentDetailPage() {
+    return (
+        <Suspense fallback={<div className="p-16 flex items-center justify-center h-[calc(100vh-56px)]"><LoadingSpinner size="lg" /></div>}>
+            <DocumentDetailPageContent />
+        </Suspense>
     );
 }
