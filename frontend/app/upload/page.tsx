@@ -10,7 +10,7 @@ import { UploadCloud, FileText, Package, Ship, X, AlertCircle } from 'lucide-rea
 import { cn } from '../../lib/utils';
 import { DocumentType } from '../../lib/types';
 import { DOC_TYPE_LABELS } from '../../lib/utils';
-import { uploadDocument, getDocumentStatus } from '../../lib/api';
+import { uploadDocument, getDocumentStatus, retryDocument } from '../../lib/api';
 
 export default function UploadPage() {
     const router = useRouter();
@@ -23,6 +23,7 @@ export default function UploadPage() {
     const [phase, setPhase] = useState<'form' | 'processing' | 'error'>('form');
     const [processingDocId, setProcessingDocId] = useState<string | null>(null);
     const [errorMsg, setErrorMsg] = useState('');
+    const [retrying, setRetrying] = useState(false);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -76,6 +77,20 @@ export default function UploadPage() {
         } catch (e: any) {
             setErrorMsg(e.message || 'Error uploading document');
             setPhase('error');
+        }
+    };
+
+    const handleRetryExtraction = async () => {
+        if (!processingDocId) return;
+        try {
+            setRetrying(true);
+            setErrorMsg('');
+            await retryDocument(processingDocId);
+            setPhase('processing');
+        } catch (e: any) {
+            setErrorMsg(e.message || 'Failed to retry extraction');
+        } finally {
+            setRetrying(false);
         }
     };
 
@@ -218,9 +233,16 @@ export default function UploadPage() {
                             </div>
                             <h3 className="text-lg font-semibold text-slate-900 mb-2">Upload Failed</h3>
                             <p className="text-slate-600 mb-8">{errorMsg}</p>
-                            <Btn onClick={() => { setPhase('form'); setProcessingDocId(null); setSelectedFile(null); }}>
-                                Try Again
-                            </Btn>
+                            <div className="flex flex-col sm:flex-row items-center gap-3">
+                                {processingDocId && (
+                                    <Btn onClick={handleRetryExtraction} loading={retrying} variant="outline">
+                                        Retry Extraction
+                                    </Btn>
+                                )}
+                                <Btn onClick={() => { setPhase('form'); setProcessingDocId(null); setSelectedFile(null); }}>
+                                    Upload New File
+                                </Btn>
+                            </div>
                         </Card>
                     )}
 

@@ -89,6 +89,29 @@ router.get('/:id/status', async (req: Request, res: Response, next: NextFunction
     } catch (err) { next(err); }
 });
 
+// ──  POST /api/documents/:id/retry  ─────────────────────────────────────────
+router.post('/:id/retry', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { rows } = await pool.query<{ id: string; status: string }>(
+            'SELECT id, status FROM documents WHERE id=$1 AND org_id=$2',
+            [req.params.id, DEMO_ORG_ID]
+        );
+
+        if (rows.length === 0) throw new NotFoundError('Document not found');
+        if (rows[0].status !== 'failed') {
+            throw new ValidationError('Retry is only allowed for failed documents');
+        }
+
+        // Ensure stale extraction/correction data is removed before reprocessing.
+        await pool.query('DELETE FROM correction_history WHERE document_id=$1', [req.params.id]);
+        await pool.query('DELETE FROM extracted_fields WHERE document_id=$1', [req.params.id]);
+
+        void extractDocument(req.params.id);
+
+        res.json({ documentId: req.params.id, status: 'processing' });
+    } catch (err) { next(err); }
+});
+
 // ──  GET /api/documents/:id  [FR-019]  ─────────────────────────────────────
 router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
     try {

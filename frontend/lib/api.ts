@@ -58,6 +58,12 @@ export async function deleteDocument(id: string): Promise<{ message: string }> {
     });
 }
 
+export async function retryDocument(id: string): Promise<{ documentId: string; status: string }> {
+    return apiFetch<{ documentId: string; status: string }>(`/api/documents/${id}/retry`, {
+        method: 'POST',
+    });
+}
+
 export async function listDocuments(params: Record<string, string | undefined>): Promise<DocumentListResponse> {
     const query = new URLSearchParams();
     for (const [key, value] of Object.entries(params)) {
