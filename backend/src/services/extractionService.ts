@@ -4,6 +4,7 @@ import path from 'path';
 import { pool } from '../db/pool';
 import { getAIProvider } from '../adapters/aiProvider';
 import { downloadFile } from '../adapters/storageService';
+import { runDuplicateCheck } from './duplicateDetectionService';
 import { ExtractionResponseSchema, cleanJsonText, FIELD_NAMES } from '../types';
 import type { ExtractionResponse } from '../types';
 
@@ -101,6 +102,7 @@ export async function extractDocument(documentId: string): Promise<void> {
                 );
             }
             await client.query('COMMIT');
+            void runDuplicateCheck(documentId);
         } catch (txError) {
             await client.query('ROLLBACK');
             await client.query(

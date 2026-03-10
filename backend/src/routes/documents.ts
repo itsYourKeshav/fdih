@@ -112,6 +112,52 @@ router.post('/:id/retry', async (req: Request, res: Response, next: NextFunction
     } catch (err) { next(err); }
 });
 
+// ──  GET /api/documents/:id/duplicate-check  ───────────────────────────────
+router.get('/:id/duplicate-check', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { rows } = await pool.query(
+            `SELECT duplicate_check_run, potential_duplicate_of
+             FROM documents WHERE id = $1 AND org_id = $2`,
+            [req.params.id, DEMO_ORG_ID]
+        );
+
+        if (rows.length === 0) {
+            res.status(404).json({ error: 'Document not found' });
+            return;
+        }
+
+        const { duplicate_check_run, potential_duplicate_of } = rows[0] as {
+            duplicate_check_run: boolean;
+            potential_duplicate_of: string | null;
+        };
+
+        let potentialDuplicate = null;
+        if (potential_duplicate_of) {
+            const { rows: matchRows } = await pool.query(
+                `SELECT d.id, d.document_type, d.status, d.uploaded_at,
+                        d.overall_confidence,
+                        MAX(CASE WHEN ef.field_name = 'reference_numbers'
+                            THEN ef.final_value END) AS reference_numbers,
+                        MAX(CASE WHEN ef.field_name = 'shipper_name'
+                            THEN ef.final_value END) AS shipper_name
+                 FROM documents d
+                 LEFT JOIN extracted_fields ef ON ef.document_id = d.id
+                 WHERE d.id = $1
+                 GROUP BY d.id`,
+                [potential_duplicate_of]
+            );
+            potentialDuplicate = matchRows[0] ?? null;
+        }
+
+        res.json({
+            duplicateCheckRun: duplicate_check_run,
+            potentialDuplicateOf: potentialDuplicate,
+        });
+    } catch (err) {
+        next(err);
+    }
+});
+
 // ──  GET /api/documents/:id  [FR-019]  ─────────────────────────────────────
 router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
     try {

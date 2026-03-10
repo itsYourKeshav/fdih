@@ -44,6 +44,22 @@ export async function getDocument(id: string): Promise<DocumentDetailResponse> {
     return apiFetch<DocumentDetailResponse>(`/api/documents/${id}`);
 }
 
+export interface DuplicateCheckResult {
+    duplicateCheckRun: boolean;
+    potentialDuplicateOf: {
+        id: string;
+        document_type: string;
+        status: string;
+        uploaded_at: string;
+        overall_confidence: number | null;
+        reference_numbers: string | null;
+        shipper_name: string | null;
+    } | null;
+}
+
+export const getDuplicateCheck = (id: string) =>
+    apiFetch<DuplicateCheckResult>(`/api/documents/${id}/duplicate-check`);
+
 export async function reviewDocument(id: string, fields: ReviewField[]): Promise<{ documentId: string; status: string }> {
     return apiFetch<{ documentId: string; status: string }>(`/api/documents/${id}/review`, {
         method: 'PUT',

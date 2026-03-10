@@ -5,6 +5,16 @@
 
 :root {
 	color-scheme: light;
+	--review-dup-bg: #ffe4e6;
+	--review-dup-border: #fda4af;
+	--review-dup-icon: #be123c;
+	--review-dup-text: #111827;
+	--review-dup-muted: #1f2937;
+	--review-dup-link: #111827;
+	--review-low-bg: #fef3c7;
+	--review-low-border: #fcd34d;
+	--review-low-icon: #b45309;
+	--review-low-text: #111827;
 }
 
 html,
@@ -21,6 +31,16 @@ body {
 
 html.theme-dark {
 	color-scheme: dark;
+	--review-dup-bg: rgba(136, 19, 55, 0.25);
+	--review-dup-border: rgba(190, 24, 93, 0.5);
+	--review-dup-icon: #fb7185;
+	--review-dup-text: #ffe4e6;
+	--review-dup-muted: #fecdd3;
+	--review-dup-link: #fda4af;
+	--review-low-bg: rgba(120, 53, 15, 0.2);
+	--review-low-border: rgba(180, 83, 9, 0.5);
+	--review-low-icon: #fbbf24;
+	--review-low-text: #fde68a;
 }
 
 html.theme-dark body {
@@ -60,4 +80,38 @@ html.theme-dark .shadow-sm,
 html.theme-dark .shadow-xl,
 html.theme-dark .shadow-inner {
 	box-shadow: none !important;
+}
+
+.review-dup-banner {
+	background-color: var(--review-dup-bg);
+	border-color: var(--review-dup-border);
+}
+
+.review-dup-icon {
+	color: var(--review-dup-icon);
+}
+
+.review-dup-text {
+	color: var(--review-dup-text);
+}
+
+.review-dup-muted {
+	color: var(--review-dup-muted);
+}
+
+.review-dup-link {
+	color: var(--review-dup-link);
+}
+
+.review-low-banner {
+	background-color: var(--review-low-bg);
+	border-color: var(--review-low-border);
+}
+
+.review-low-icon {
+	color: var(--review-low-icon);
+}
+
+.review-low-text {
+	color: var(--review-low-text);
 }
