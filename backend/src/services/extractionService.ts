@@ -2,7 +2,7 @@
 
 import path from 'path';
 import { pool } from '../db/pool';
-import { callClaude } from '../adapters/claudeClient';
+import { getAIProvider } from '../adapters/aiProvider';
 import { downloadFile } from '../adapters/storageService';
 import { ExtractionResponseSchema, cleanJsonText, FIELD_NAMES } from '../types';
 import type { ExtractionResponse } from '../types';
@@ -57,18 +57,20 @@ export async function extractDocument(documentId: string): Promise<void> {
         };
         const mimeType = mimeMap[ext] ?? 'application/pdf';
 
-        // Step 5+6 — call Claude with retry logic
+        // Step 5+6 — call AI provider with retry logic
+        const aiProvider = getAIProvider();
+        console.log(`[FR-005] Using AI provider: ${aiProvider.getName()}`);
         let validated: ExtractionResponse;
         try {
-            const rawText = await callClaude(fileBuffer, mimeType, doc.document_type, false);
+            const rawText = await aiProvider.extractData(fileBuffer, mimeType, doc.document_type, false);
             validated = await parseAndValidate(rawText);
         } catch (firstError) {
-            console.warn('First extraction attempt failed, retrying:', firstError);
+            console.warn('[FR-006] First extraction attempt failed, retrying:', firstError);
             try {
-                const rawText = await callClaude(fileBuffer, mimeType, doc.document_type, true);
+                const rawText = await aiProvider.extractData(fileBuffer, mimeType, doc.document_type, true);
                 validated = await parseAndValidate(rawText);
             } catch (retryError) {
-                console.error('Retry also failed:', retryError);
+                console.error('[FR-007] Retry also failed:', retryError);
                 await client.query(
                     'UPDATE documents SET status=$1, updated_at=now() WHERE id=$2',
                     ['failed', documentId]
