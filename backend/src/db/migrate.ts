@@ -4,6 +4,20 @@ import path from 'path';
 import dotenv from 'dotenv';
 dotenv.config();
 
+function resolveMigrationsDir(): string {
+  const candidates = [
+    path.join(__dirname, 'migrations'),
+    path.join(process.cwd(), 'src', 'db', 'migrations'),
+    path.join(process.cwd(), 'dist', 'db', 'migrations'),
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+
+  throw new Error(`Could not find migrations directory. Tried: ${candidates.join(', ')}`);
+}
+
 async function migrate(): Promise<void> {
   const client = await pool.connect();
   try {
@@ -16,7 +30,7 @@ async function migrate(): Promise<void> {
     `);
 
     // Run migration files in alphabetical order FIRST (tables must exist before seeding)
-    const dir = path.join(__dirname, 'migrations');
+    const dir = resolveMigrationsDir();
     const files = fs.readdirSync(dir).filter(f => f.endsWith('.sql')).sort();
 
     for (const file of files) {
