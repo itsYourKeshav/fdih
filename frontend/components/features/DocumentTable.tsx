@@ -12,7 +12,7 @@ import { Btn } from '../ui/Btn';
 import { LoadingSpinner } from '../ui/LoadingSpinner';
 import { EmptyState } from '../ui/EmptyState';
 import { FileText, ChevronLeft, ChevronRight } from 'lucide-react';
-import { listDocuments } from '../../lib/api';
+import { listDocuments, retryDocument } from '../../lib/api';
 
 interface DocumentTableProps {
     filters: {
@@ -33,6 +33,7 @@ export function DocumentTable({ filters, onClearFilters }: DocumentTableProps) {
     const [page, setPage] = useState(1);
     const [total, setTotal] = useState(0);
     const [totalPages, setTotalPages] = useState(0);
+    const [retryingIds, setRetryingIds] = useState<Set<string>>(new Set());
     const limit = 20;
 
     const hasFilters = Boolean(filters.q || filters.type || filters.dateFrom || filters.dateTo || filters.country);
@@ -68,6 +69,23 @@ export function DocumentTable({ filters, onClearFilters }: DocumentTableProps) {
     useEffect(() => {
         setPage(1);
     }, [filters.q, filters.type, filters.dateFrom, filters.dateTo, filters.country]);
+
+    const handleRetry = async (documentId: string, event?: React.MouseEvent) => {
+        event?.stopPropagation();
+        try {
+            setRetryingIds(prev => new Set(prev).add(documentId));
+            await retryDocument(documentId);
+            await fetchDocuments();
+        } catch (e: any) {
+            setError(e.message || 'Failed to retry extraction');
+        } finally {
+            setRetryingIds(prev => {
+                const next = new Set(prev);
+                next.delete(documentId);
+                return next;
+            });
+        }
+    };
 
     if (loading) {
         return (
@@ -112,6 +130,7 @@ export function DocumentTable({ filters, onClearFilters }: DocumentTableProps) {
                             <th className="px-4 py-3 font-medium">Confidence</th>
                             <th className="px-4 py-3 font-medium">Status</th>
                             <th className="px-4 py-3 font-medium">Uploaded</th>
+                            <th className="px-4 py-3 font-medium text-right">Action</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
@@ -137,6 +156,20 @@ export function DocumentTable({ filters, onClearFilters }: DocumentTableProps) {
                                     <td className="px-4 py-3"><ConfBadge score={doc.overall_confidence} /></td>
                                     <td className="px-4 py-3"><StatusBadge status={doc.status} /></td>
                                     <td className="px-4 py-3 text-slate-500">{formatDate(doc.uploaded_at)}</td>
+                                    <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                                        {doc.status === 'failed' ? (
+                                            <Btn
+                                                size="sm"
+                                                variant="outline"
+                                                loading={retryingIds.has(doc.id)}
+                                                onClick={(e) => handleRetry(doc.id, e)}
+                                            >
+                                                Retry
+                                            </Btn>
+                                        ) : (
+                                            <span className="text-xs text-slate-400">-</span>
+                                        )}
+                                    </td>
                                 </tr>
                             );
                         })}
@@ -174,6 +207,19 @@ export function DocumentTable({ filters, onClearFilters }: DocumentTableProps) {
                                     <ConfBadge score={doc.overall_confidence} />
                                     <span>{formatDate(doc.uploaded_at)}</span>
                                 </div>
+                                {doc.status === 'failed' && (
+                                    <div className="mt-3 pt-3 border-t border-slate-200" onClick={(e) => e.stopPropagation()}>
+                                        <Btn
+                                            size="sm"
+                                            variant="outline"
+                                            loading={retryingIds.has(doc.id)}
+                                            onClick={(e) => handleRetry(doc.id, e)}
+                                            className="w-full"
+                                        >
+                                            Retry Extraction
+                                        </Btn>
+                                    </div>
+                                )}
                             </Card>
                         </div>
                     );

@@ -8,9 +8,15 @@ import { FieldForm } from '../../../components/features/FieldForm';
 import { Btn } from '../../../components/ui/Btn';
 import { LoadingSpinner } from '../../../components/ui/LoadingSpinner';
 import { Card } from '../../../components/ui/Card';
-import { AlertCircle, Check } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Check } from 'lucide-react';
 import { DocumentDetailResponse } from '../../../lib/types';
-import { getDocument, reviewDocument, deleteDocument } from '../../../lib/api';
+import {
+    DuplicateCheckResult,
+    deleteDocument,
+    getDocument,
+    getDuplicateCheck,
+    reviewDocument,
+} from '../../../lib/api';
 
 export default function ReviewPage() {
     const router = useRouter();
@@ -28,6 +34,8 @@ export default function ReviewPage() {
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const [previewOpen, setPreviewOpen] = useState(false); // Mobile
+    const [dupMatch, setDupMatch] =
+        useState<DuplicateCheckResult['potentialDuplicateOf']>(null);
 
     useEffect(() => {
         async function fetchDoc() {
@@ -52,6 +60,13 @@ export default function ReviewPage() {
 
                 setData(res);
                 setFieldValues(initVals);
+
+                try {
+                    const dup = await getDuplicateCheck(id);
+                    setDupMatch(dup.potentialDuplicateOf);
+                } catch {
+                    // non-blocking — silently ignore, never show error to user
+                }
             } catch (e: any) {
                 setError(e.message || 'Failed to fetch document');
             } finally {
@@ -170,10 +185,58 @@ export default function ReviewPage() {
                 </div>
             </PageHeader>
 
+            {dupMatch && (
+                <div className="mt-0 border-y px-4 sm:px-6 py-3 review-dup-banner">
+                    <div className="flex flex-col sm:flex-row sm:items-start gap-3">
+                        <AlertTriangle className="w-5 h-5 mt-0.5 flex-shrink-0 review-dup-icon" />
+                        <div className="flex-1 min-w-0">
+                            <p className="font-semibold review-dup-text">
+                                Possible duplicate detected
+                            </p>
+                            <p className="text-sm mt-0.5 review-dup-muted">
+                                This document closely matches an existing approved document:
+                            </p>
+                            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                                <span className="font-mono text-xs font-semibold review-dup-text">
+                                    {dupMatch.reference_numbers
+                                        ? (() => {
+                                            try {
+                                                const arr = JSON.parse(dupMatch.reference_numbers);
+                                                return Array.isArray(arr) ? arr[0] : dupMatch.reference_numbers;
+                                            } catch {
+                                                return dupMatch.reference_numbers;
+                                            }
+                                        })()
+                                        : 'No reference'}
+                                </span>
+                                {dupMatch.shipper_name && (
+                                    <span className="text-sm truncate max-w-full review-dup-muted">
+                                        {dupMatch.shipper_name}
+                                    </span>
+                                )}
+                                <span className="text-xs review-dup-muted">
+                                    {new Date(dupMatch.uploaded_at).toLocaleDateString('en-GB', {
+                                        day: 'numeric', month: 'short', year: 'numeric',
+                                    })}
+                                </span>
+                            </div>
+                        </div>
+                        <a
+                            href={`/documents/${dupMatch.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm font-semibold hover:underline self-start sm:self-center flex-shrink-0 whitespace-nowrap review-dup-link"
+                        >
+                            View match →
+                        </a>
+                    </div>
+                </div>
+            )}
+
             {hasLowConfidence && (
-                <div className="bg-amber-50 border-b border-amber-200 px-6 py-3 flex items-start sm:items-center gap-3">
-                    <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5 sm:mt-0" />
-                    <p className="text-sm text-amber-800 font-medium">
+                <div className="border-y px-4 sm:px-6 py-3 flex items-start sm:items-center gap-3 review-low-banner">
+                    <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 sm:mt-0 review-low-icon" />
+                    <p className="text-sm font-medium review-low-text">
                         This document has low confidence fields. Please review them carefully before saving.
                     </p>
                 </div>
@@ -192,7 +255,6 @@ export default function ReviewPage() {
                             <span className="text-xs font-normal text-slate-500 bg-slate-200 px-2 rounded-full py-0.5">{data.fields.length} Fields</span>
                         </h2>
                         <div className="flex-1 overflow-auto pr-2 custom-scrollbar">
-
                             {/* Mobile Preview Toggle */}
                             <div className="md:hidden mb-4">
                                 <FilePreview

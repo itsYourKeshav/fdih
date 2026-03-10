@@ -13,7 +13,7 @@ import { LoadingSpinner } from '../../../components/ui/LoadingSpinner';
 import { Card } from '../../../components/ui/Card';
 import { ArrowLeft } from 'lucide-react';
 import { DocumentDetailResponse } from '../../../lib/types';
-import { getDocument } from '../../../lib/api';
+import { getDocument, retryDocument } from '../../../lib/api';
 import { FIELD_LABELS, cn } from '../../../lib/utils';
 
 export default function DocumentDetailPage() {
@@ -24,6 +24,7 @@ export default function DocumentDetailPage() {
     const [data, setData] = useState<DocumentDetailResponse | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [retrying, setRetrying] = useState(false);
 
     useEffect(() => {
         async function fetchDoc() {
@@ -62,6 +63,25 @@ export default function DocumentDetailPage() {
         }
     };
 
+    const handleRetry = async () => {
+        if (!data) return;
+        try {
+            setRetrying(true);
+            await retryDocument(data.document.id);
+            setData(prev => prev ? {
+                ...prev,
+                document: {
+                    ...prev.document,
+                    status: 'processing',
+                },
+            } : prev);
+        } catch (e: any) {
+            setError(e.message || 'Failed to retry extraction');
+        } finally {
+            setRetrying(false);
+        }
+    };
+
     return (
         <div className="flex flex-col h-full bg-slate-50 min-h-[calc(100vh-56px)]">
             <PageHeader title={''}>
@@ -79,6 +99,11 @@ export default function DocumentDetailPage() {
 
                 <div className="flex-1 flex justify-end items-center gap-2 relative">
                     <StatusBadge status={data.document.status} />
+                    {data.document.status === 'failed' && (
+                        <Btn size="sm" variant="outline" loading={retrying} onClick={handleRetry}>
+                            Retry
+                        </Btn>
+                    )}
                     <div className="hidden sm:block pl-2 border-l border-slate-200">
                         <ConfBadge score={data.document.overall_confidence} />
                     </div>

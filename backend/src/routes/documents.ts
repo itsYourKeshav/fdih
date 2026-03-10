@@ -89,6 +89,75 @@ router.get('/:id/status', async (req: Request, res: Response, next: NextFunction
     } catch (err) { next(err); }
 });
 
+// ──  POST /api/documents/:id/retry  ─────────────────────────────────────────
+router.post('/:id/retry', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { rows } = await pool.query<{ id: string; status: string }>(
+            'SELECT id, status FROM documents WHERE id=$1 AND org_id=$2',
+            [req.params.id, DEMO_ORG_ID]
+        );
+
+        if (rows.length === 0) throw new NotFoundError('Document not found');
+        if (rows[0].status !== 'failed') {
+            throw new ValidationError('Retry is only allowed for failed documents');
+        }
+
+        // Ensure stale extraction/correction data is removed before reprocessing.
+        await pool.query('DELETE FROM correction_history WHERE document_id=$1', [req.params.id]);
+        await pool.query('DELETE FROM extracted_fields WHERE document_id=$1', [req.params.id]);
+
+        void extractDocument(req.params.id);
+
+        res.json({ documentId: req.params.id, status: 'processing' });
+    } catch (err) { next(err); }
+});
+
+// ──  GET /api/documents/:id/duplicate-check  ───────────────────────────────
+router.get('/:id/duplicate-check', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { rows } = await pool.query(
+            `SELECT duplicate_check_run, potential_duplicate_of
+             FROM documents WHERE id = $1 AND org_id = $2`,
+            [req.params.id, DEMO_ORG_ID]
+        );
+
+        if (rows.length === 0) {
+            res.status(404).json({ error: 'Document not found' });
+            return;
+        }
+
+        const { duplicate_check_run, potential_duplicate_of } = rows[0] as {
+            duplicate_check_run: boolean;
+            potential_duplicate_of: string | null;
+        };
+
+        let potentialDuplicate = null;
+        if (potential_duplicate_of) {
+            const { rows: matchRows } = await pool.query(
+                `SELECT d.id, d.document_type, d.status, d.uploaded_at,
+                        d.overall_confidence,
+                        MAX(CASE WHEN ef.field_name = 'reference_numbers'
+                            THEN ef.final_value END) AS reference_numbers,
+                        MAX(CASE WHEN ef.field_name = 'shipper_name'
+                            THEN ef.final_value END) AS shipper_name
+                 FROM documents d
+                 LEFT JOIN extracted_fields ef ON ef.document_id = d.id
+                 WHERE d.id = $1
+                 GROUP BY d.id`,
+                [potential_duplicate_of]
+            );
+            potentialDuplicate = matchRows[0] ?? null;
+        }
+
+        res.json({
+            duplicateCheckRun: duplicate_check_run,
+            potentialDuplicateOf: potentialDuplicate,
+        });
+    } catch (err) {
+        next(err);
+    }
+});
+
 // ──  GET /api/documents/:id  [FR-019]  ─────────────────────────────────────
 router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
     try {
