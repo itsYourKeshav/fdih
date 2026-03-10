@@ -1,0 +1,46 @@
+services:
+  - type: web
+    name: fdih-backend
+    runtime: node
+    rootDir: backend
+    plan: starter
+    buildCommand: npm install && npm run build
+    startCommand: node dist/db/migrate.js && node dist/index.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: PORT
+        value: 3001
+      - key: DATABASE_URL
+        sync: false
+      - key: DEMO_ORG_ID
+        value: 11111111-1111-1111-1111-111111111111
+      - key: STORAGE_TYPE
+        value: local
+      - key: UPLOAD_DIR
+        value: /opt/render/project/uploads
+      - key: AI_PROVIDER
+        value: claude
+      - key: ANTHROPIC_API_KEY
+        sync: false
+    disks:
+      - name: uploads
+        mountPath: /opt/render/project/uploads
+        sizeGB: 5
+
+  - type: web
+    name: fdih-frontend
+    runtime: node
+    rootDir: frontend
+    plan: starter
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: BACKEND_INTERNAL_URL
+        value: http://fdih-backend:3001
+      - key: NEXT_PUBLIC_API_URL
+        value: ""
+
